@@ -1,140 +1,142 @@
+# Add to spec:
+# - printing out a nil value is undefined
+
+from env_v1 import EnvironmentManager
+from type_valuev1 import Type, Value, create_value, get_printable
+from intbase import InterpreterBase, ErrorType
 from brewparse import parse_program
-from intbase import InterpreterBase
-from intbase import ErrorType
 
 
+# Main interpreter class
 class Interpreter(InterpreterBase):
-    # required constructor
+    # constants
+    BIN_OPS = {"+", "-"}
+
+    # methods
     def __init__(self, console_output=True, inp=None, trace_output=False):
-        super().__init__(console_output, inp)   
+        super().__init__(console_output, inp)
+        self.trace_output = trace_output
+        self.__setup_ops()
 
+    # run a program that's provided in a string
+    # usese the provided Parser found in brewparse.py to parse the program
+    # into an abstract syntax tree (ast)
     def run(self, program):
-        ast = parse_program(program) # parse program into AST
-        self.map = {}  # dictionary to hold variables
-        main_func_node = ast.get('functions') # get the function node for main()
-        self.run_func(main_func_node)
+        ast = parse_program(program)
+        self.__set_up_function_table(ast)
+        main_func = self.__get_func_by_name("main")
+        self.env = EnvironmentManager()
+        self.__run_statements(main_func.get("statements"))
 
-    def run_func(self, main_func_node):
-        for func_node in main_func_node:
-            if func_node.get('name') == 'main': # make sure function is the main() function
-                for statement_node in func_node.get('statements'):
-                    self.run_statement(statement_node) # run each statement node in the main func node
-            else:
-                #if we reach here, there is no main function
-                super().error(
-                    ErrorType.NAME_ERROR,
-                    "No main() function was found",
-                )
-    
-    def run_statement(self, statement_node):
-        # check for a definition
-        if statement_node.elem_type == 'vardef':
-            self.do_definition(statement_node)
-        # check for an assignement
-        elif statement_node.elem_type == '=':
-            self.do_assignment(statement_node)
-        # check for a function call
-        elif statement_node.elem_type == 'fcall':
-            self.do_func_call(statement_node)
+    def __set_up_function_table(self, ast):
+        self.func_name_to_ast = {}
+        for func_def in ast.get("functions"):
+            self.func_name_to_ast[func_def.get("name")] = func_def
 
-    def do_definition(self, statement_node):
-        name = statement_node.get('name')
-        # check if variable has already been declared
-        if name in self.map:
+    def __get_func_by_name(self, name):
+        if name not in self.func_name_to_ast:
+            super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
+        return self.func_name_to_ast[name]
+
+    def __run_statements(self, statements):
+        # all statements of a function are held in arg3 of the function AST node
+        for statement in statements:
+            if self.trace_output:
+                print(statement)
+            if statement.elem_type == InterpreterBase.FCALL_NODE:
+                self.__call_func(statement)
+            elif statement.elem_type == "=":
+                self.__assign(statement)
+            elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
+                self.__var_def(statement)
+
+
+    def __call_func(self, call_node):
+        func_name = call_node.get("name")
+        if func_name == "print":
+            return self.__call_print(call_node)
+        if func_name == "inputi":
+            return self.__call_input(call_node)
+
+        # add code here later to call other functions
+        super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
+
+    def __call_print(self, call_ast):
+        output = ""
+        for arg in call_ast.get("args"):
+            result = self.__eval_expr(arg)  # result is a Value object
+            output = output + get_printable(result)
+        super().output(output)
+
+    def __call_input(self, call_ast):
+        args = call_ast.get("args")
+        if args is not None and len(args) == 1:
+            result = self.__eval_expr(args[0])
+            super().output(get_printable(result))
+        elif args is not None and len(args) > 1:
             super().error(
-                ErrorType.NAME_ERROR,
-                f"Variable {name} defined more than once",
+                ErrorType.NAME_ERROR, "No inputi() function that takes > 1 parameter"
             )
-        else:
-            # default value of zero
-            self.map[name] = 0
+        inp = super().get_input()
+        if call_ast.get("name") == "inputi":
+            return Value(Type.INT, int(inp))
+        # we can support inputs here later
 
-    def do_assignment(self, statement_node):
-        # check that the variable exists
-        if statement_node.get('name') not in self.map:
+    def __assign(self, assign_ast):
+        var_name = assign_ast.get("name")
+        value_obj = self.__eval_expr(assign_ast.get("expression"))
+        if not self.env.set(var_name, value_obj):
             super().error(
-                ErrorType.NAME_ERROR,
-                f"Variable {statement_node.get('name')} has not been defined",
-            )
-        # call evaluate_expression to get assignment value
-        value = self.evaluate_expression(statement_node.get('expression'))
-        # check that statement node has a name before assigning a value to the variable in map
-        if (statement_node.get('name') != None):
-                self.map[statement_node.get('name')] = value
-
-    def do_func_call(self, function_node):
-        # inputi implementation
-        if (function_node.get('name') == 'inputi'):
-            args = function_node.get('args')
-            # check that there is only one argument passed in
-            if len(args) > 1:
-                super().error(
-                    ErrorType.NAME_ERROR,
-                    f"No inputi() function found that takes > 1 parameter",
-                )
-            # output the argument passed to inputi
-            for arg in args:
-                super().output(arg.get('val'))
-                value = 0
-            # get input
-            value = int(self.get_input())
-            return value
-        # print implementation
-        elif (function_node.get('name') == 'print'):
-            args = function_node.get('args')
-            # string to be printed, default empty
-            toprint = ""
-            # check for the value of the args and convert them to strings
-            for arg in args:
-                if (arg.elem_type == '+') or (arg.elem_type == '-') or (arg.elem_type == 'var'):
-                    toprint += str(self.evaluate_expression(arg))
-                elif arg.elem_type == 'int':
-                    toprint += str(arg.get('val'))
-                elif arg.elem_type == 'string':
-                    toprint += arg.get('val')
-                elif arg.elem_type == 'fcall':
-                    toprint += str(self.do_func_call(arg))
-            super().output(toprint)
-        else:
-            # if we reach here, the function is not print or inputi
-            super().error(
-                ErrorType.NAME_ERROR,
-                f"Function {function_node.get('name')} has not been defined",
+                ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
             )
 
-    def evaluate_expression(self, expression_node):
-        # if the expression node is a value, you can return the value
-        if expression_node.get('val') != None:
-            return expression_node.get('val')
-        # if the elem type is fcall do a fucntion call
-        elif expression_node.elem_type == 'fcall':
-            return self.do_func_call(expression_node)
-        # addition and subtraction implementation
-        elif expression_node.elem_type == '+' or expression_node.elem_type == '-':
-            # recursively get the values of the operands
-            op1 = self.evaluate_expression(expression_node.get('op1'))
-            op2 = self.evaluate_expression(expression_node.get('op2'))
-            if(type(op1) == int and type(op2) == int):
-                if expression_node.elem_type == '+':
-                    return op1 + op2
-                elif expression_node.elem_type == '-':
-                    return op1 - op2
-            else:
-                # if we reach here the types are not able to be added/subtracted
-                super().error(
-                    ErrorType.TYPE_ERROR,
-                    "Incompatible types for arithmetic operation",
-                )
-        # variable implementation
-        elif expression_node.elem_type == 'var':
-            # check if variable has been declared
-            if expression_node.get('name') in self.map:
-                return self.map[expression_node.get('name')]
-            else:
-                # if we reach here the variable has not been declared
-                super().error(
-                    ErrorType.NAME_ERROR,
-                    f"Variable {expression_node.get('name')} has not been defined",
-                )
-        else:
-            super().error(ErrorType.NAME_ERROR,f"Invalid Expression",)
+    def __var_def(self, var_ast):
+        var_name = var_ast.get("name")
+        if not self.env.create(var_name, Value(Type.INT, 0)):
+            super().error(
+                ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
+            )
+
+    def __eval_expr(self, expr_ast):
+        if expr_ast.elem_type == InterpreterBase.INT_NODE:
+            return Value(Type.INT, expr_ast.get("val"))
+        if expr_ast.elem_type == InterpreterBase.STRING_NODE:
+            return Value(Type.STRING, expr_ast.get("val"))
+        if expr_ast.elem_type == InterpreterBase.VAR_NODE:
+            var_name = expr_ast.get("name")
+            val = self.env.get(var_name)
+            if val is None:
+                super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
+            return val
+        if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
+            return self.__call_func(expr_ast)
+        if expr_ast.elem_type in Interpreter.BIN_OPS:
+            return self.__eval_op(expr_ast)
+
+    def __eval_op(self, arith_ast):
+        left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+        right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+        if left_value_obj.type() != right_value_obj.type():
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types for {arith_ast.elem_type} operation",
+            )
+        if arith_ast.elem_type not in self.op_to_lambda[left_value_obj.type()]:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
+            )
+        f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        return f(left_value_obj, right_value_obj)
+
+    def __setup_ops(self):
+        self.op_to_lambda = {}
+        # set up operations on integers
+        self.op_to_lambda[Type.INT] = {}
+        self.op_to_lambda[Type.INT]["+"] = lambda x, y: Value(
+            x.type(), x.value() + y.value()
+        )
+        self.op_to_lambda[Type.INT]["-"] = lambda x, y: Value(
+            x.type(), x.value() - y.value()
+        )
+        # add other operators here later for int, string, bool, etc
