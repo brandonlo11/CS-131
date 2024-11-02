@@ -12,6 +12,7 @@ class Interpreter(InterpreterBase):
     # constants
     BIN_OPS = {"+", "-", "*", "/"} # Add * and / to Binary operators
     COM_OPS = {">", "<", ">=", "<="} # Comparison operators
+    LOG_OPS = {"&&", "||", "!"} # Logical operators
 
     # methods
     def __init__(self, console_output=True, inp=None, trace_output=False):
