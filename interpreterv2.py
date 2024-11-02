@@ -13,6 +13,7 @@ class Interpreter(InterpreterBase):
     BIN_OPS = {"+", "-", "*", "/"} # Add * and / to Binary operators
     COM_OPS = {">", "<", ">=", "<="} # Comparison operators
     LOG_OPS = {"&&", "||", "!"} # Logical operators
+    EQU_OPS = {"==", "!="} # Equality Operators
 
     # methods
     def __init__(self, console_output=True, inp=None, trace_output=False):
@@ -178,6 +179,23 @@ class Interpreter(InterpreterBase):
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         return f(left_value_obj, right_value_obj)
 
+    def __eval_equ(self, arith_ast):
+        left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+        right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+
+        if arith_ast.elem_type == "==":
+            if left_value_obj.type() == Type.NIL and right_value_obj.type() == Type.NIL:
+                return Value(Type.BOOL, True)
+            elif left_value_obj.type() != right_value_obj.type():
+                return Value(Type.BOOL, False)
+        elif arith_ast.elem_type == "!=":
+            if left_value_obj.type() == Type.NIL and right_value_obj.type() == Type.NIL:
+                return Value(Type.BOOL, False)
+            elif left_value_obj.type() != right_value_obj.type():
+                return Value(Type.BOOL, True)
+        f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        return f(left_value_obj, right_value_obj)
+
     def __setup_ops(self):
         self.op_to_lambda = {}
         # set up operations on integers
@@ -205,5 +223,44 @@ class Interpreter(InterpreterBase):
         )
         self.op_to_lambda[Type.INT]["<="] = lambda x, y: Value(
             Type.BOOL, x.value() <= y.value()
+        )
+        self.op_to_lambda[Type.INT]["=="] = lambda x, y: Value(
+            Type.BOOL, x.value() == y.value()
+        )
+        self.op_to_lambda[Type.INT]["!="] = lambda x, y: Value(
+            Type.BOOL, x.value() != y.value()
+        )
+
+        # set up operations on strings
+        self.op_to_lambda[Type.STRING]["+"] = lambda x, y: Value(
+            x.type(), x.value() + y.value()
+        )
+        self.op_to_lambda[Type.STRING]["=="] = lambda x, y: Value(
+            Type.BOOL, x.value() == y.value()
+        )
+        self.op_to_lambda[Type.STRING]["!="] = lambda x, y: Value(
+            Type.BOOL, x.value() != y.value()
+        )
+
+        # set up operations on bools
+        self.op_to_lambda[Type.BOOL]["=="] = lambda x, y: Value(
+            Type.BOOL, x.value() == y.value()
+        )
+        self.op_to_lambda[Type.BOOL]["!="] = lambda x, y: Value(
+            Type.BOOL, x.value() != y.value()
+        )
+        self.op_to_lambda[Type.BOOL]["&&"] = lambda x, y: Value(
+            Type.BOOL, x.value() and y.value()
+        )
+        self.op_to_lambda[Type.BOOL]["||"] = lambda x, y: Value(
+            Type.BOOL, x.value() or y.value()
+        )
+
+        # set up operations on NIL
+        self.op_to_lambda[Type.NIL]["=="] = lambda x, y: Value(
+            Type.BOOL, x.value() == y.value()
+        )
+        self.op_to_lambda[Type.NIL]["!="] = lambda x, y: Value(
+            Type.BOOL, x.value() != y.value()
         )
         # add other operators here later for int, string, bool, etc
