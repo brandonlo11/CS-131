@@ -60,10 +60,14 @@ class Interpreter(InterpreterBase):
             elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
                 self.__var_def(statement)
             elif statement.elem_type == InterpreterBase.IF_NODE:
-                self.__call_if_statement(statement)
+                result = self.__call_if_statement(statement)
+                if result is not None:
+                    return result
             elif statement.elem_type == InterpreterBase.WHILE_NODE:
                 self.__call_while_loop(statement)
-
+                result = self.__call_if_statement(statement)
+                if result is not None:
+                    return result
 
     def __call_func(self, call_node):
         func_name = call_node.get("name")
@@ -134,11 +138,34 @@ class Interpreter(InterpreterBase):
             if result.type() == Type.RET:
                 return result
 
+    def __call_while_loop(self, while_node):
+        # Initialize a new scope for the while-loop
+        loop_scope = EnvironmentManager()
+        self.env.append(loop_scope)
+        
+        # Validate the loop condition
+        condition_expr = while_node.get("condition")
+        if condition_expr.elem_type == InterpreterBase.VAR_NODE:
+            super().error(ErrorType.TYPE_ERROR)
 
-    
-    # def __call_while_loop(self, call_node):
+        # Evaluate and execute the loop as long as the condition is true
+        while True:
+            condition_value = self.__eval_expr(condition_expr)
 
+            # Ensure the condition evaluates to a boolean
+            if not isinstance(condition_value.value(), bool) or not condition_value.value():
+                break  # Exit loop if condition is false or not a boolean
 
+            # Execute loop body statements
+            result = self.__run_statements(while_node.get("statements"))
+
+            # Return early if a return value is encountered in the loop body
+            if result.type() == Type.RET:
+                self.env.pop()  # Remove loop scope
+                return result
+
+        # Clean up the environment after loop completion
+        self.env.pop()
 
     def __call_print(self, call_ast):
         output = ""
