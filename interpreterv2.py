@@ -68,6 +68,8 @@ class Interpreter(InterpreterBase):
                 result = self.__call_if_statement(statement)
                 if result is not None:
                     return result
+            elif statement.elem_type == InterpreterBase.RETURN_NODE:
+                return self.__call_return(statement)
 
     def __call_func(self, call_node):
         func_name = call_node.get("name")
@@ -166,6 +168,19 @@ class Interpreter(InterpreterBase):
 
         # Clean up the environment after loop completion
         self.env.pop()
+
+    def __call_return(self, return_node):
+        # Default return value is nil
+        result_value = Value(Type.NIL, InterpreterBase.NIL_NODE)
+
+        # Evaluate the return expression if it exists
+        expression = return_node.get("expression")
+        if expression is not None:
+            result_value = copy.deepcopy(self.__eval_expr(expression))
+
+        # Wrap the result in a return type
+        return Value(Type.RET, result_value)
+
 
     def __call_print(self, call_ast):
         output = ""
