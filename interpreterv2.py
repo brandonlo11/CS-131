@@ -10,7 +10,7 @@ from brewparse import parse_program
 # Main interpreter class
 class Interpreter(InterpreterBase):
     # constants
-    BIN_OPS = {"+", "-"}
+    BIN_OPS = {"+", "-", "*", "/"} # Add * and /
 
     # methods
     def __init__(self, console_output=True, inp=None, trace_output=False):
@@ -138,5 +138,11 @@ class Interpreter(InterpreterBase):
         )
         self.op_to_lambda[Type.INT]["-"] = lambda x, y: Value(
             x.type(), x.value() - y.value()
+        )
+        self.op_to_lambda[Type.INT]["*"] = lambda x, y: Value(
+            x.type(), x.value() * y.value()
+        )
+        self.op_to_lambda[Type.INT]["/"] = lambda x, y: Value(
+            x.type(), x.value() // y.value()
         )
         # add other operators here later for int, string, bool, etc
