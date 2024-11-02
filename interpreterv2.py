@@ -226,16 +226,42 @@ class Interpreter(InterpreterBase):
             return Value(Type.INT, expr_ast.get("val"))
         if expr_ast.elem_type == InterpreterBase.STRING_NODE:
             return Value(Type.STRING, expr_ast.get("val"))
+        if expr_ast.elem_type == InterpreterBase.BOOL_NODE:
+            return Value(Type.BOOL, expr_ast.get("val"))
+        if expr_ast.elem_type == InterpreterBase.NIL_NODE: 
+            return Value(Type.NIL, expr_ast.get("val"))
+        if expr_ast.elem_type == InterpreterBase.NEG_NODE:
+            operand = self.__eval_expr(expr_ast.get("op1"))
+            # Ensure the operand is an integer for negation
+            if operand.type() != Type.INT:
+                super().error(ErrorType.TYPE_ERROR)
+            negated_value = operand.value() * -1
+            return Value(Type.INT, negated_value)
+        if expr_ast.elem_type == Interpreter.NOT_NODE:
+            operand = self.__eval_expr(expr_ast.get("op1"))
+            # Ensure the operand is a boolean for negation
+            if operand.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR)
+            negated_value = not operand.value()
+            return Value(Type.BOOL, negated_value)
         if expr_ast.elem_type == InterpreterBase.VAR_NODE:
             var_name = expr_ast.get("name")
-            val = self.env.get(var_name)
+            val = None
+            for var in reversed(self.env):
+                if var.get(var_name) != None:
+                    return var.get(var_name)
             if val is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
-            return val
         if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
             return self.__call_func(expr_ast)
         if expr_ast.elem_type in Interpreter.BIN_OPS:
             return self.__eval_op(expr_ast)
+        if expr_ast.elem_type in Interpreter.COM_OPS:
+            return self.__eval_com(expr_ast)
+        if expr_ast.elem_type in Interpreter.LOG_OPS:
+            return self.__eval_log(expr_ast)
+        if expr_ast.elem_type in Interpreter.EQU_OPS:
+            return self.__eval_equ(expr_ast)
 
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
