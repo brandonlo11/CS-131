@@ -196,10 +196,23 @@ class Interpreter(InterpreterBase):
     def __assign(self, assign_ast):
         var_name = assign_ast.get("name")
         value_obj = self.__eval_expr(assign_ast.get("expression"))
-        if not self.env.set(var_name, value_obj):
+        # Default to the innermost (current) scope
+        target_scope = self.env[-1]
+
+        # Traverse the environment stack from innermost to outermost scope
+        bool found = False
+        for scope in reversed(self.env):
+            if scope.get(var_name) is not None:
+                target_scope = scope
+                found = True
+                break  # Stop once the variable is found in a scope
+        if not found:
             super().error(
                 ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
             )
+        # Update the variable's value in the appropriate scope
+        target_scope.set(var_name, value_obj)
+
 
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
