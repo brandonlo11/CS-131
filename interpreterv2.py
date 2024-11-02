@@ -62,8 +62,35 @@ class Interpreter(InterpreterBase):
         func_name = call_node.get("name")
         if func_name == "print":
             return self.__call_print(call_node)
-        if func_name == "inputi":
+        elif func_name == "inputi":
             return self.__call_input(call_node)
+        elif func_name == "inputs":
+            return self.__call_input(call_node)
+        # Check if the function is a user-defined function
+        args = call_node.get("args")
+        func_key = (func_name, len(args))
+        if func_key in self.func_name_to_ast:
+            # Retrieve the function definition and set up a new environment scope
+            func_def = self.__get_func_by_name(func_key)
+            new_scope = EnvironmentManager()
+            # Initialize function parameters with evaluated argument values
+            for param, arg_value in zip(func_def.get("args"), args):
+                evaluated_value = self.__eval_expr(arg_value)
+                new_scope.set(param.get("name"), evaluated_value)
+                
+            # Run the function with the new scope in place
+            self.env.append(new_scope)
+            return_value = self.__run_statements(func_def.get("statements"))
+            self.env.pop()
+            
+            # Return the evaluated function result
+            return return_value.value()
+            
+        # If function name or argument count do not match, an error could be raised
+        else:
+            super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
+
+        
 
         # add code here later to call other functions
         super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
