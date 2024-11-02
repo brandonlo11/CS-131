@@ -27,9 +27,16 @@ class Interpreter(InterpreterBase):
     def run(self, program):
         ast = parse_program(program)
         self.__set_up_function_table(ast)
-        main_func = self.__get_func_by_name("main")
-        self.env = EnvironmentManager()
-        self.__run_statements(main_func.get("statements"))
+        # Initialize a new environment scope for the main function
+        main_scope = EnvironmentManager()
+        self.env = [main_scope]
+        # Execute the statements in the main function and capture the return value
+        result = self.__run_statements(main_func.get("statements"))
+        # Clean up by removing the main function's scope from the environment stack
+        self.env.pop()
+        # Return the final result of the main function execution
+        return result.value().value()
+
 
     def __set_up_function_table(self, ast):
         self.func_name_to_ast = {}
