@@ -51,6 +51,10 @@ class Interpreter(InterpreterBase):
                 self.__assign(statement)
             elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
                 self.__var_def(statement)
+            elif statement.elem_type == InterpreterBase.IF_NODE:
+                self.__call_if_statement(statement)
+            elif statement.elem_type == InterpreterBase.WHILE_NODE:
+                self.__call_while_loop(statement)
 
 
     def __call_func(self, call_node):
@@ -62,6 +66,15 @@ class Interpreter(InterpreterBase):
 
         # add code here later to call other functions
         super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
+    
+    def __call_if_statment(self, call_node):
+        condition = call_node.get("condition")
+        if condition.elem_type == InterpreterBase.VAR_NODE:
+            if self.__eval_expr(condition) != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR)
+            if self.__eval_expr(condition).value():
+
+
 
     def __call_print(self, call_ast):
         output = ""
@@ -127,6 +140,40 @@ class Interpreter(InterpreterBase):
             super().error(
                 ErrorType.TYPE_ERROR,
                 f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
+            )
+        f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        return f(left_value_obj, right_value_obj)
+    
+    def __eval_com(self, arith_ast):
+        left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+        right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+
+        if left_value_obj.type() != Type.INT:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types for {arith_ast.elem_type} operation",
+            )
+        if right_value_obj.type() != Type.INT:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types for {arith_ast.elem_type} operation",
+            )
+        f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        return f(left_value_obj, right_value_obj)
+    
+    def __eval_log(self, arith_ast):
+        left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+        right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+
+        if left_value_obj.type() != Type.BOOL:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types for {arith_ast.elem_type} operation",
+            )
+        if right_value_obj.type() != Type.BOOL:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Incompatible types for {arith_ast.elem_type} operation",
             )
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         return f(left_value_obj, right_value_obj)
