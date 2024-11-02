@@ -102,12 +102,38 @@ class Interpreter(InterpreterBase):
         # add code here later to call other functions
         super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
     
-    # def __call_if_statment(self, call_node):
-    #     condition = call_node.get("condition")
-    #     if condition.elem_type == InterpreterBase.VAR_NODE:
-    #         if self.__eval_expr(condition) != Type.BOOL:
-    #             super().error(ErrorType.TYPE_ERROR)
-    #         if self.__eval_expr(condition).value():
+    def __call_if_statement(self, if_node):
+        # Evaluate the condition of the if-statement
+        condition_expr = if_node.get("condition")
+
+        # Ensure the condition is of boolean type
+        if condition_expr.elem_type == InterpreterBase.VAR_NODE and condition_result.type() != Type.BOOL:
+            super().error(ErrorType.TYPE_ERROR)
+
+        condition_result = self.__eval_expr(condition_expr)
+
+        # Execute the 'if' block if the condition is true
+        if condition_result.value():
+            if_scope = EnvironmentManager()
+            self.env.append(if_scope)
+            result = self.__run_statements(if_node.get("statements"))
+            self.env.pop()  # Remove scope after execution
+
+            # Return if a return value is encountered
+            if result.type() == Type.RET:
+                return result
+
+        # Execute the 'else' block if present and condition is false
+        elif if_node.get("else_statements") is not None:
+            else_scope = EnvironmentManager()
+            self.env.append(else_scope)
+            result = self.__run_statements(if_node.get("else_statements"))
+            self.env.pop()  # Remove scope after execution
+
+            # Return if a return value is encountered
+            if result.type() == Type.RET:
+                return result
+
 
     
     # def __call_while_loop(self, call_node):
