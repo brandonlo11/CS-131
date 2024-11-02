@@ -34,7 +34,7 @@ class Interpreter(InterpreterBase):
     def __set_up_function_table(self, ast):
         self.func_name_to_ast = {}
         for func_def in ast.get("functions"):
-            self.func_name_to_ast[func_def.get("name")] = func_def
+            self.func_name_to_ast[func_def.get("name"),len(func_def.get("args"))] = func_def
 
     def __get_func_by_name(self, name):
         if name not in self.func_name_to_ast:
@@ -68,12 +68,15 @@ class Interpreter(InterpreterBase):
         # add code here later to call other functions
         super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
     
-    def __call_if_statment(self, call_node):
-        condition = call_node.get("condition")
-        if condition.elem_type == InterpreterBase.VAR_NODE:
-            if self.__eval_expr(condition) != Type.BOOL:
-                super().error(ErrorType.TYPE_ERROR)
-            if self.__eval_expr(condition).value():
+    # def __call_if_statment(self, call_node):
+    #     condition = call_node.get("condition")
+    #     if condition.elem_type == InterpreterBase.VAR_NODE:
+    #         if self.__eval_expr(condition) != Type.BOOL:
+    #             super().error(ErrorType.TYPE_ERROR)
+    #         if self.__eval_expr(condition).value():
+
+    
+    # def __call_while_loop(self, call_node):
 
 
 
