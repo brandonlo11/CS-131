@@ -113,6 +113,7 @@ class Interpreter(InterpreterBase):
             result = self.__eval_expr(arg)  # result is a Value object
             output = output + get_printable(result)
         super().output(output)
+        return create_value(InterpreterBase.NIL_NODE)
 
     def __call_input(self, call_ast):
         args = call_ast.get("args")
@@ -127,6 +128,10 @@ class Interpreter(InterpreterBase):
         if call_ast.get("name") == "inputi":
             return Value(Type.INT, int(inp))
         # we can support inputs here later
+        if call_ast.get("name") == "inputs":
+            first_word = str(inp).split()[0]  # Extract the first word from input
+            return Value(Type.STRING, first_word)
+
 
     def __assign(self, assign_ast):
         var_name = assign_ast.get("name")
