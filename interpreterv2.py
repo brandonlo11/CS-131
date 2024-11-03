@@ -37,13 +37,17 @@ class Interpreter(InterpreterBase):
         # Clean up by removing the main function's scope from the environment stack
         self.env.pop()
         # Return the final result of the main function execution
+        if result is None:
+            result = Value(Type.NIL, None)
+        print("Final result:")
+        print(result.value())
         return result.value().value()
 
 
     def __set_up_function_table(self, ast):
         self.func_name_to_ast = {}
         for func_def in ast.get("functions"):
-            self.func_name_to_ast[func_def.get("name"),len(func_def.get("args"))] = func_def
+            self.func_name_to_ast[(func_def.get("name"),len(func_def.get("args")))] = func_def
 
     def __get_func_by_name(self, name):
         if name not in self.func_name_to_ast:
@@ -67,6 +71,8 @@ class Interpreter(InterpreterBase):
                     return result
             elif statement.elem_type == InterpreterBase.RETURN_NODE:
                 return self.__call_return(statement)
+        
+        return Value(Type.NIL,Value(Type.NIL, InterpreterBase.NIL_NODE)) 
 
     def __call_func(self, call_node):
         func_name = call_node.get("name")
@@ -81,12 +87,12 @@ class Interpreter(InterpreterBase):
         func_key = (func_name, len(args))
         if func_key in self.func_name_to_ast:
             # Retrieve the function definition and set up a new environment scope
-            func_def = self.__get_func_by_name(func_key)
             new_scope = EnvironmentManager()
+            func_def = self.__get_func_by_name(func_key)
             # Initialize function parameters with evaluated argument values
             for param, arg_value in zip(func_def.get("args"), args):
                 evaluated_value = self.__eval_expr(arg_value)
-                new_scope.set(param.get("name"), evaluated_value)
+                new_scope.create(param.get("name"), evaluated_value)
                 
             # Run the function with the new scope in place
             self.env.append(new_scope)
@@ -94,12 +100,12 @@ class Interpreter(InterpreterBase):
             self.env.pop()
             
             # Return the evaluated function result
-            return return_value.value()
+            return return_value.value() if return_value is not None else Value(Type.NIL, None)
             
         # If function name or argument count do not match, an error could be raised
-        else:
-            super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
+        super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
     
+    # if statement implementation
     def __call_if_statement(self, if_node):
         # Evaluate the condition of the if-statement
         condition_expr = if_node.get("condition")
@@ -130,6 +136,7 @@ class Interpreter(InterpreterBase):
             if result.type() == Type.RET:
                 return result
 
+    # return statement implementation
     def __call_return(self, return_node):
         # Default return value is nil
         result_value = Value(Type.NIL, InterpreterBase.NIL_NODE)
@@ -143,6 +150,7 @@ class Interpreter(InterpreterBase):
         return Value(Type.RET, result_value)
 
 
+    # print function
     def __call_print(self, call_ast):
         output = ""
         for arg in call_ast.get("args"):
@@ -173,33 +181,27 @@ class Interpreter(InterpreterBase):
         var_name = assign_ast.get("name")
         value_obj = self.__eval_expr(assign_ast.get("expression"))
         # Default to the innermost (current) scope
-        target_scope = self.env[-1]
+        target_scope = None
 
         # Traverse the environment stack from innermost to outermost scope
-        found = False
         for scope in reversed(self.env):
             if scope.get(var_name) is not None:
                 target_scope = scope
-                found = True
                 break  # Stop once the variable is found in a scope
-        if not found:
+        if target_scope is None:
             super().error(
                 ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
             )
         # Update the variable's value in the appropriate scope
         target_scope.set(var_name, value_obj)
 
-
+    # define a new variable
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
-        # if not self.env.create(var_name, Value(Type.INT, 0)):
-        #     super().error(
-        #         ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
-        #     )
         current_scope = self.env[-1]
         if current_scope.get(var_name) is not None:
             super().error(ErrorType.NAME_ERROR, f"Duplicate variable definition for {var_name}")
-        current_scope.set(var_name, Value(Type.INT, 0))
+        current_scope.create(var_name, Value(Type.INT, 0))
 
     def __eval_expr(self, expr_ast):
         if expr_ast.elem_type == InterpreterBase.INT_NODE:
@@ -259,6 +261,7 @@ class Interpreter(InterpreterBase):
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         return f(left_value_obj, right_value_obj)
     
+    # comparison operator implementation
     def __eval_com(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
@@ -276,6 +279,7 @@ class Interpreter(InterpreterBase):
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         return f(left_value_obj, right_value_obj)
     
+    # logical operation implementation
     def __eval_log(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
@@ -293,6 +297,7 @@ class Interpreter(InterpreterBase):
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         return f(left_value_obj, right_value_obj)
 
+    # equality operator implementation
     def __eval_equ(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
