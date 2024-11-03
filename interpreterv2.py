@@ -15,6 +15,7 @@ class Interpreter(InterpreterBase):
     LOG_OPS = {"&&", "||", "!"} # Logical operators
     EQU_OPS = {"==", "!="} # Equality Operators
 
+
     # methods
     def __init__(self, console_output=True, inp=None, trace_output=False):
         super().__init__(console_output, inp)
@@ -27,6 +28,7 @@ class Interpreter(InterpreterBase):
     def run(self, program):
         ast = parse_program(program)
         self.__set_up_function_table(ast)
+        main_func = self.__get_func_by_name(("main",0))
         # Initialize a new environment scope for the main function
         main_scope = EnvironmentManager()
         self.env = [main_scope]
@@ -60,11 +62,6 @@ class Interpreter(InterpreterBase):
             elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
                 self.__var_def(statement)
             elif statement.elem_type == InterpreterBase.IF_NODE:
-                result = self.__call_if_statement(statement)
-                if result is not None:
-                    return result
-            elif statement.elem_type == InterpreterBase.WHILE_NODE:
-                self.__call_while_loop(statement)
                 result = self.__call_if_statement(statement)
                 if result is not None:
                     return result
@@ -102,21 +99,14 @@ class Interpreter(InterpreterBase):
         # If function name or argument count do not match, an error could be raised
         else:
             super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
-
-        
-
-        # add code here later to call other functions
-        super().error(ErrorType.NAME_ERROR, f"Function {func_name} not found")
     
     def __call_if_statement(self, if_node):
         # Evaluate the condition of the if-statement
         condition_expr = if_node.get("condition")
-
-        # Ensure the condition is of boolean type
-        if condition_expr.elem_type == InterpreterBase.VAR_NODE and condition_result.type() != Type.BOOL:
-            super().error(ErrorType.TYPE_ERROR)
-
         condition_result = self.__eval_expr(condition_expr)
+        # Ensure the condition is of boolean type
+        if condition_result.type() != Type.BOOL:
+            super().error(ErrorType.TYPE_ERROR)
 
         # Execute the 'if' block if the condition is true
         if condition_result.value():
@@ -139,35 +129,6 @@ class Interpreter(InterpreterBase):
             # Return if a return value is encountered
             if result.type() == Type.RET:
                 return result
-
-    def __call_while_loop(self, while_node):
-        # Initialize a new scope for the while-loop
-        loop_scope = EnvironmentManager()
-        self.env.append(loop_scope)
-        
-        # Validate the loop condition
-        condition_expr = while_node.get("condition")
-        if condition_expr.elem_type == InterpreterBase.VAR_NODE:
-            super().error(ErrorType.TYPE_ERROR)
-
-        # Evaluate and execute the loop as long as the condition is true
-        while True:
-            condition_value = self.__eval_expr(condition_expr)
-
-            # Ensure the condition evaluates to a boolean
-            if not isinstance(condition_value.value(), bool) or not condition_value.value():
-                break  # Exit loop if condition is false or not a boolean
-
-            # Execute loop body statements
-            result = self.__run_statements(while_node.get("statements"))
-
-            # Return early if a return value is encountered in the loop body
-            if result.type() == Type.RET:
-                self.env.pop()  # Remove loop scope
-                return result
-
-        # Clean up the environment after loop completion
-        self.env.pop()
 
     def __call_return(self, return_node):
         # Default return value is nil
@@ -203,7 +164,7 @@ class Interpreter(InterpreterBase):
         if call_ast.get("name") == "inputi":
             return Value(Type.INT, int(inp))
         # we can support inputs here later
-        if call_ast.get("name") == "inputs":
+        elif call_ast.get("name") == "inputs":
             first_word = str(inp).split()[0]  # Extract the first word from input
             return Value(Type.STRING, first_word)
 
@@ -215,7 +176,7 @@ class Interpreter(InterpreterBase):
         target_scope = self.env[-1]
 
         # Traverse the environment stack from innermost to outermost scope
-        bool found = False
+        found = False
         for scope in reversed(self.env):
             if scope.get(var_name) is not None:
                 target_scope = scope
@@ -231,10 +192,14 @@ class Interpreter(InterpreterBase):
 
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
-        if not self.env.create(var_name, Value(Type.INT, 0)):
-            super().error(
-                ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
-            )
+        # if not self.env.create(var_name, Value(Type.INT, 0)):
+        #     super().error(
+        #         ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
+        #     )
+        current_scope = self.env[-1]
+        if current_scope.get(var_name) is not None:
+            super().error(ErrorType.NAME_ERROR, f"Duplicate variable definition for {var_name}")
+        current_scope.set(var_name, Value(Type.INT, 0))
 
     def __eval_expr(self, expr_ast):
         if expr_ast.elem_type == InterpreterBase.INT_NODE:
@@ -347,6 +312,12 @@ class Interpreter(InterpreterBase):
 
     def __setup_ops(self):
         self.op_to_lambda = {}
+        
+        self.op_to_lambda[Type.INT] = {}
+        self.op_to_lambda[Type.STRING] = {}
+        self.op_to_lambda[Type.BOOL] = {}
+        self.op_to_lambda[Type.NIL] = {}
+
         # set up operations on integers
         self.op_to_lambda[Type.INT] = {}
         self.op_to_lambda[Type.INT]["+"] = lambda x, y: Value(
