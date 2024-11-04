@@ -39,8 +39,6 @@ class Interpreter(InterpreterBase):
         # Return the final result of the main function execution
         if result is None:
             result = Value(Type.NIL, None)
-        print("Final result:")
-        print(result.value())
         return result.value().value()
 
 
@@ -67,6 +65,10 @@ class Interpreter(InterpreterBase):
                 self.__var_def(statement)
             elif statement.elem_type == InterpreterBase.IF_NODE:
                 result = self.__call_if_statement(statement)
+                if result is not None:
+                    return result
+            elif statement.elem_type == InterpreterBase.FOR_NODE:
+                result = self.__call_for_loop(statement)
                 if result is not None:
                     return result
             elif statement.elem_type == InterpreterBase.RETURN_NODE:
@@ -136,6 +138,26 @@ class Interpreter(InterpreterBase):
             if result.type() == Type.RET:
                 return result
 
+    # for loop implementation
+    def __call_for_loop(self, for_node):
+        init_statement = for_node.dict.get("init")
+        self.__assign(init_statement)
+        while True:
+            condition_expr = for_node.dict.get("condition")
+            condition_result = self.__eval_expr(condition_expr)
+            if condition_result.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR, "For loop condition must be a boolean")
+            if not condition_result.value():
+                break
+            loop_scope = EnvironmentManager()
+            self.env.append(loop_scope)
+            result = self.__run_statements(for_node.dict.get("statements"))
+            self.env.pop() 
+            if result is not None and result.type() == Type.RET:
+                return result  # Exit the loop if there's a return statement
+            update_statement = for_node.dict.get("update")
+            self.__assign(update_statement)
+
     # return statement implementation
     def __call_return(self, return_node):
         # Default return value is nil
@@ -157,7 +179,7 @@ class Interpreter(InterpreterBase):
             result = self.__eval_expr(arg)  # result is a Value object
             output = output + get_printable(result)
         super().output(output)
-        return create_value(InterpreterBase.NIL_NODE)
+        return Value(Type.NIL, InterpreterBase.NIL_NODE)
 
     def __call_input(self, call_ast):
         args = call_ast.get("args")
