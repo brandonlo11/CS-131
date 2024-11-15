@@ -41,10 +41,6 @@ class Interpreter(InterpreterBase):
         for func_def in ast.get("functions"):
             func_name = func_def.get("name")
             num_params = len(func_def.get("args"))
-            return_type = func_def.get("return_type")
-            arg_types = []
-            for arg in func_def.get("args"):
-                arg_types.append(arg.get("var_type"))
             if func_name not in self.func_name_to_ast:
                 self.func_name_to_ast[func_name] = {}
             self.func_name_to_ast[func_name][num_params] = func_def
@@ -144,6 +140,8 @@ class Interpreter(InterpreterBase):
                     ErrorType.TYPE_ERROR,
                     f"You can not return a value of type {return_val.type()} to a function of return type {return_type}",
                 )
+        if return_type == Type.VOID:
+            return_val = Value(Type.VOID, None)
         return return_val
 
     def __call_print(self, args):
@@ -251,8 +249,28 @@ class Interpreter(InterpreterBase):
     def __compatible_types(self, oper, obj1, obj2):
         # DOCUMENT: allow comparisons ==/!= of anything against anything
         if oper in ["==", "!="]:
+            if obj1.type() == Type.BOOL and obj2.type() == Type.INT:
+                obj2 = self.__coerce(obj2.value())
+            if obj1.type() == Type.INT and obj2.type() == Type.BOOL:
+                obj2 = self.__coerce(obj1.value())
+            if obj1.type() != obj2.type():
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Can not compare types of {obj1.type()} and {obj2.type()}",
+                )
+            if (obj1.type() == Type.NIL and obj2.type() != Type.NIL) or (obj2.type() == Type.NIL and obj1.type() != Type.NIL):
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"Can not compare types of {obj1.type()} and {obj2.type()}",
+                )
             return True
         return obj1.type() == obj2.type()
+    
+    def __coerce(self, int_val):
+        if int_val.value() == 0:
+             return create_value("false")
+        else:
+            return create_value("true")
 
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
@@ -336,7 +354,6 @@ class Interpreter(InterpreterBase):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
         if result.type() == Type.INT:
-            print("entered line 315")
             if result.value() == 0:
                 result = create_value("false")
             else:
