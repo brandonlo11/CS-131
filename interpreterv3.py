@@ -4,9 +4,9 @@ import copy
 from enum import Enum
 
 from brewparse import parse_program
-from env_v2 import EnvironmentManager
+from env_v3 import EnvironmentManager
 from intbase import InterpreterBase, ErrorType
-from type_valuev2 import Type, Value, create_value, get_printable
+from type_valuev3 import Type, Value, create_value, get_printable
 
 
 class ExecStatus(Enum):
@@ -41,10 +41,16 @@ class Interpreter(InterpreterBase):
         for func_def in ast.get("functions"):
             func_name = func_def.get("name")
             num_params = len(func_def.get("args"))
+            return_type = func_def.get("return_type")
+            arg_types = []
+            for arg in func_def.get("args"):
+                arg_types.append(arg.get("var_type"))
             if func_name not in self.func_name_to_ast:
                 self.func_name_to_ast[func_name] = {}
             self.func_name_to_ast[func_name][num_params] = func_def
 
+
+    #Can use this func to get func_def node, can also append return type and arg types to hash map
     def __get_func_by_name(self, name, num_params):
         if name not in self.func_name_to_ast:
             super().error(ErrorType.NAME_ERROR, f"Function {name} not found")
@@ -99,6 +105,11 @@ class Interpreter(InterpreterBase):
             return self.__call_input(func_name, actual_args)
 
         func_ast = self.__get_func_by_name(func_name, len(actual_args))
+        arg_types = []
+        for arg in func_ast.get("args"):
+            arg_types.append(arg.get("var_type"))
+        return_type = func_ast.get("return_type")
+
         formal_args = func_ast.get("args")
         if len(actual_args) != len(formal_args):
             super().error(
@@ -108,7 +119,13 @@ class Interpreter(InterpreterBase):
 
         # first evaluate all of the actual parameters and associate them with the formal parameter names
         args = {}
-        for formal_ast, actual_ast in zip(formal_args, actual_args):
+        #add param types to check in this for loop
+        for formal_ast, actual_ast, arg_type in zip(formal_args, actual_args, arg_types):
+            if actual_ast.get("var_type") != arg_type:
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"You can not pass an argument of type {actual_ast.get("var_type")} to {arg_type}",
+                )
             result = copy.copy(self.__eval_expr(actual_ast))
             arg_name = formal_ast.get("name")
             args[arg_name] = result
@@ -118,8 +135,15 @@ class Interpreter(InterpreterBase):
         # and add the formal arguments to the activation record
         for arg_name, value in args.items():
           self.env.create(arg_name, value)
-        _, return_val = self.__run_statements(func_ast.get("statements"))
+        #Can check if this is a return using the blank
+        status, return_val = self.__run_statements(func_ast.get("statements"))
         self.env.pop_func()
+        if status == ExecStatus.RETURN:
+            if return_val.type() != return_type:
+                super().error(
+                    ErrorType.TYPE_ERROR,
+                    f"You can not return a value of type {return_val.type()} to a function of return type {return_type}",
+                )
         return return_val
 
     def __call_print(self, args):
@@ -146,7 +170,17 @@ class Interpreter(InterpreterBase):
 
     def __assign(self, assign_ast):
         var_name = assign_ast.get("name")
+        var_val = self.env.get(var_name)
         value_obj = self.__eval_expr(assign_ast.get("expression"))
+        if var_val.type() == Type.BOOL and value_obj.type() == Type.INT:
+            if value_obj.value() == 0:
+                value_obj = create_value("false")
+            else:
+                value_obj = create_value("true")
+        if var_val.type() != value_obj.type():
+            super().error(
+                ErrorType.TYPE_ERROR, f"Types {var_val} and {value_obj} are imcompatible for assignment"
+            )
         if not self.env.set(var_name, value_obj):
             super().error(
                 ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
@@ -154,10 +188,23 @@ class Interpreter(InterpreterBase):
     
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
-        if not self.env.create(var_name, Interpreter.NIL_VALUE):
+        var_type = var_ast.get("var_type")
+        value = Value(var_type, self.__default_val(var_type))
+        if not self.env.create(var_name, value):
             super().error(
                 ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
             )
+    
+    def __default_val(self, var_type):
+        if var_type == Type.BOOL:
+            return False
+        if var_type == Type.INT:
+            return 0
+        if var_type == Type.STRING:
+            return ""
+        #Add default value for structs here
+        ErrorType.TYPE_ERROR, f"Unknown type {var_type}"
+
 
     def __eval_expr(self, expr_ast):
         if expr_ast.elem_type == InterpreterBase.NIL_NODE:
@@ -288,6 +335,12 @@ class Interpreter(InterpreterBase):
     def __do_if(self, if_ast):
         cond_ast = if_ast.get("condition")
         result = self.__eval_expr(cond_ast)
+        if result.type() == Type.INT:
+            print("entered line 315")
+            if result.value() == 0:
+                result = create_value("false")
+            else:
+                result = create_value("true")
         if result.type() != Type.BOOL:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -334,3 +387,11 @@ class Interpreter(InterpreterBase):
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.copy(self.__eval_expr(expr_ast))
         return (ExecStatus.RETURN, value_obj)
+
+# interpreter = Interpreter()
+# interpreter.run("""func main() : int {
+#   var a: int; 
+#   a = true;
+#   print(a);
+# }
+# """)
