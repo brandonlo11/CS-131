@@ -32,22 +32,11 @@ class Interpreter(InterpreterBase):
     # into an abstract syntax tree (ast)
     def run(self, program):
         ast = parse_program(program)
-        self.__set_up_function_table(ast)
         self.__set_up_struct_table(ast)
+        self.__set_up_function_table(ast)
         self.env = EnvironmentManager()
         self.__call_func_aux("main", [])
 
-    def __set_up_function_table(self, ast):
-        self.func_name_to_ast = {}
-        for func_def in ast.get("functions"):
-            func_name = func_def.get("name")
-            if func_def.get("return_type") == None:
-                super().error(ErrorType.TYPE_ERROR, f"No return type for function {func_name}")
-            num_params = len(func_def.get("args"))
-            if func_name not in self.func_name_to_ast:
-                self.func_name_to_ast[func_name] = {}
-            self.func_name_to_ast[func_name][num_params] = func_def
-    
     def __set_up_struct_table(self, ast):
         self.struct_defs = {}
         for struct_def in ast.get("structs"):
@@ -63,6 +52,21 @@ class Interpreter(InterpreterBase):
                     super().error(ErrorType.NAME_ERROR, f"Duplicate field name {field_name} in struct {struct_name}")
                 fields[field_name] = Value(field_type, self.__default_val(field_type))
             self.struct_defs[struct_name] = fields
+
+    def __set_up_function_table(self, ast):
+        self.func_name_to_ast = {}
+        for func_def in ast.get("functions"):
+            func_name = func_def.get("name")
+            args = func_def.get("args")
+            for arg in args:
+                if arg.get("var_type") != Type.BOOL and arg.get("var_type") != Type.INT and arg.get("var_type") != Type.STRING and arg.get("var_type") not in self.struct_defs:
+                    super().error(ErrorType.TYPE_ERROR, f"Parameter can not be of type {arg.get("var_type")}")
+            if func_def.get("return_type") == None:
+                super().error(ErrorType.TYPE_ERROR, f"No return type for function {func_name}")
+            num_params = len(func_def.get("args"))
+            if func_name not in self.func_name_to_ast:
+                self.func_name_to_ast[func_name] = {}
+            self.func_name_to_ast[func_name][num_params] = func_def
 
     #Can use this func to get func_def node, can also append return type and arg types to hash map
     def __get_func_by_name(self, name, num_params):
@@ -147,6 +151,11 @@ class Interpreter(InterpreterBase):
                 v = temp.type()
             else:
                 v = actual_ast.elem_type
+            # if arg_type != Type.BOOL and arg_type != Type.INT and arg_type != Type.STRING and arg_type not in self.struct_defs:
+            #     super().error(
+            #         ErrorType.TYPE_ERROR,
+            #         f"You can not pass an argument of type {v} to {arg_type}",
+            #     )
             if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)) and not(v == Type.NIL and arg_type in self.struct_defs):
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -218,9 +227,9 @@ class Interpreter(InterpreterBase):
                 value_obj = create_value("false")
             else:
                 value_obj = create_value("true")
-        if var_val.type() != value_obj.type() and not (var_val.type() in self.struct_defs and value_obj.type() == Type.NIL):
+        if var_val.type() != value_obj.type() and not (var_val.type() in self.struct_defs and value_obj.type() == Type.NIL) and not (var_val.type() == Type.NIL and value_obj.type() in self.struct_defs):
             super().error(
-                ErrorType.TYPE_ERROR, f"Types {var_val} and {value_obj} are imcompatible for assignment"
+                ErrorType.TYPE_ERROR, f"Types {var_val.type()} and {value_obj.type()} are imcompatible for assignment"
             )
         if not self.env.set(var_name, value_obj):
             super().error(
@@ -238,7 +247,11 @@ class Interpreter(InterpreterBase):
             super().error(
                 ErrorType.TYPE_ERROR, f"No type {var_type} exists"
             )
-        value = Value(var_type, self.__default_val(var_type))
+        default = self.__default_val(var_type)
+        if default == None:
+            value = Interpreter.NIL_VALUE
+        else:
+            value = Value(var_type, self.__default_val(var_type))
         if not self.env.create(var_name, value):
             super().error(
                 ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
@@ -363,9 +376,6 @@ class Interpreter(InterpreterBase):
                 left_value_obj = self.__coerce(left_value_obj.value())
             if right_value_obj.type() == Type.INT:
                 right_value_obj = self.__coerce(right_value_obj.value())
-        if arith_ast.elem_type == "==" and left_value_obj.value() == None and right_value_obj.value() == None:
-                print("entered")
-                return create_value("true")
         return f(left_value_obj, right_value_obj)
 
     def __compatible_types(self, oper, obj1, obj2):
