@@ -41,6 +41,8 @@ class Interpreter(InterpreterBase):
         self.func_name_to_ast = {}
         for func_def in ast.get("functions"):
             func_name = func_def.get("name")
+            if func_def.get("return_type") == None:
+                super().error(ErrorType.TYPE_ERROR, f"No return type for function {func_name}")
             num_params = len(func_def.get("args"))
             if func_name not in self.func_name_to_ast:
                 self.func_name_to_ast[func_name] = {}
@@ -121,6 +123,11 @@ class Interpreter(InterpreterBase):
         for arg in func_ast.get("args"):
             arg_types.append(arg.get("var_type"))
         return_type = func_ast.get("return_type")
+        if return_type == None:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"No return type provided",
+            )
 
         formal_args = func_ast.get("args")
         if len(actual_args) != len(formal_args):
@@ -140,7 +147,7 @@ class Interpreter(InterpreterBase):
                 v = temp.type()
             else:
                 v = actual_ast.elem_type
-            if v != arg_type:
+            if v != arg_type and not (v in self.BIN_OPS and arg_type == Type.INT):
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"You can not pass an argument of type {v} to {arg_type}",
@@ -160,6 +167,8 @@ class Interpreter(InterpreterBase):
         if status == ExecStatus.RETURN:
             if return_type in self.struct_defs and return_val.type() == Type.NIL:
                 return return_val
+            if return_val.type() == Type.NIL:
+                return Value(return_type, self.__default_val(return_type))
             if return_val.type() != return_type:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -167,6 +176,8 @@ class Interpreter(InterpreterBase):
                 )
         if return_type == Type.VOID:
             return_val = Value(Type.VOID, None)
+        if return_val.type() == Type.NIL:
+                return Value(return_type, self.__default_val(return_type))
         return return_val
 
     def __call_print(self, args):
@@ -215,6 +226,14 @@ class Interpreter(InterpreterBase):
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
         var_type = var_ast.get("var_type")
+        if var_type == None:
+            super().error(
+                ErrorType.TYPE_ERROR, f"No type provided for {var_name}"
+            )
+        if var_type != Type.BOOL and var_type != Type.INT and var_type != Type.STRING and var_type != Type.NIL and var_type not in self.struct_defs:
+            super().error(
+                ErrorType.TYPE_ERROR, f"No type {var_type} exists"
+            )
         value = Value(var_type, self.__default_val(var_type))
         if not self.env.create(var_name, value):
             super().error(
@@ -277,7 +296,7 @@ class Interpreter(InterpreterBase):
         if var.type() not in self.struct_defs:
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Variable to the left of the dot operator is of {parts[0].type()}, not type struct",
+                f"Variable to the left of the dot operator is not type struct",
             )
         if field_name not in self.struct_defs[var.type()]:
             super().error(
@@ -299,7 +318,7 @@ class Interpreter(InterpreterBase):
         if var.type() not in self.struct_defs:
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Variable to the left of the dot operator is of {parts[0].type()}, not type struct",
+                f"{var_name} is not type struct",
             )
         if field_name not in self.struct_defs[var.type()]:
             super().error(
@@ -324,6 +343,11 @@ class Interpreter(InterpreterBase):
                 f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
             )
         f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        if arith_ast.elem_type in ["==", "!="]:
+            if left_value_obj.type() == Type.BOOL and right_value_obj.type() == Type.INT:
+                right_value_obj = self.__coerce(right_value_obj.value())
+            if left_value_obj.type() == Type.INT and right_value_obj.type() == Type.BOOL:
+                left_value_obj = self.__coerce(left_value_obj.value())
         return f(left_value_obj, right_value_obj)
 
     def __compatible_types(self, oper, obj1, obj2):
@@ -332,22 +356,22 @@ class Interpreter(InterpreterBase):
             if obj1.type() == Type.BOOL and obj2.type() == Type.INT:
                 obj2 = self.__coerce(obj2.value())
             if obj1.type() == Type.INT and obj2.type() == Type.BOOL:
-                obj2 = self.__coerce(obj1.value())
-            if obj1.type() != obj2.type():
+                obj1 = self.__coerce(obj1.value())
+            if obj1.type() != obj2.type() and not ((obj1.type() == Type.NIL and obj2.type() in self.struct_defs) or (obj2.type() == Type.NIL and obj1.type() in self.struct_defs)):
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"Can not compare types of {obj1.type()} and {obj2.type()}",
                 )
-            if (obj1.type() == Type.NIL and obj2.type() != Type.NIL) or (obj2.type() == Type.NIL and obj1.type() != Type.NIL):
-                super().error(
-                    ErrorType.TYPE_ERROR,
-                    f"Can not compare types of {obj1.type()} and {obj2.type()}",
-                )
+            # if (obj1.type() == Type.NIL and obj2.type() != Type.NIL) or (obj2.type() == Type.NIL and obj1.type() != Type.NIL):
+            #     super().error(
+            #         ErrorType.TYPE_ERROR,
+            #         f"Can not compare types of {obj1.type()} and {obj2.type()}",
+            #     )
             return True
         return obj1.type() == obj2.type()
     
     def __coerce(self, int_val):
-        if int_val.value() == 0:
+        if int_val == 0:
              return create_value("false")
         else:
             return create_value("true")
@@ -464,6 +488,11 @@ class Interpreter(InterpreterBase):
         run_for = Interpreter.TRUE_VALUE
         while run_for.value():
             run_for = self.__eval_expr(cond_ast)  # check for-loop condition
+            if run_for.type() == Type.INT:
+                if run_for.value() != 0:
+                    run_for = create_value("true")
+                else:
+                    run_for = create_value("false")
             if run_for.type() != Type.BOOL:
                 super().error(
                     ErrorType.TYPE_ERROR,
