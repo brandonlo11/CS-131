@@ -60,9 +60,11 @@ class Interpreter(InterpreterBase):
             args = func_def.get("args")
             for arg in args:
                 if arg.get("var_type") != Type.BOOL and arg.get("var_type") != Type.INT and arg.get("var_type") != Type.STRING and arg.get("var_type") not in self.struct_defs:
-                    super().error(ErrorType.TYPE_ERROR, f"Parameter can not be of type {arg.get("var_type")}")
+                    super().error(ErrorType.TYPE_ERROR, f"Parameter can not be of type {arg.get('var_type')}")
             if func_def.get("return_type") == None:
                 super().error(ErrorType.TYPE_ERROR, f"No return type for function {func_name}")
+            if func_def.get("return_type") != Type.BOOL and func_def.get("return_type") != Type.INT and func_def.get("return_type") != Type.STRING and func_def.get("return_type") != Type.VOID and func_def.get("return_type") not in self.struct_defs:
+                super().error(ErrorType.TYPE_ERROR, f"Return type can not be of type {func_def.get('return_type')}")
             num_params = len(func_def.get("args"))
             if func_name not in self.func_name_to_ast:
                 self.func_name_to_ast[func_name] = {}
@@ -151,12 +153,7 @@ class Interpreter(InterpreterBase):
                 v = temp.type()
             else:
                 v = actual_ast.elem_type
-            # if arg_type != Type.BOOL and arg_type != Type.INT and arg_type != Type.STRING and arg_type not in self.struct_defs:
-            #     super().error(
-            #         ErrorType.TYPE_ERROR,
-            #         f"You can not pass an argument of type {v} to {arg_type}",
-            #     )
-            if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)) and not(v == Type.NIL and arg_type in self.struct_defs):
+            if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)) and not(v == Type.NIL and arg_type in self.struct_defs) and not (arg_type == Type.BOOL and v == Type.INT):
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"You can not pass an argument of type {v} to {arg_type}",
@@ -390,11 +387,6 @@ class Interpreter(InterpreterBase):
                     ErrorType.TYPE_ERROR,
                     f"Can not compare types of {obj1.type()} and {obj2.type()}",
                 )
-            # if (obj1.type() == Type.NIL and obj2.type() != Type.NIL) or (obj2.type() == Type.NIL and obj1.type() != Type.NIL):
-            #     super().error(
-            #         ErrorType.TYPE_ERROR,
-            #         f"Can not compare types of {obj1.type()} and {obj2.type()}",
-            #     )
             return True
         return obj1.type() == obj2.type()
     
@@ -556,11 +548,3 @@ class Interpreter(InterpreterBase):
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.copy(self.__eval_expr(expr_ast))
         return (ExecStatus.RETURN, value_obj)
-
-# interpreter = Interpreter()
-# interpreter.run("""func main() : int {
-#   var a: int; 
-#   a = true;
-#   print(a);
-# }
-# """)
