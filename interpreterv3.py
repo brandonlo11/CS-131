@@ -147,7 +147,7 @@ class Interpreter(InterpreterBase):
                 v = temp.type()
             else:
                 v = actual_ast.elem_type
-            if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)):
+            if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)) and not(v == Type.NIL and arg_type in self.struct_defs):
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"You can not pass an argument of type {v} to {arg_type}",
@@ -171,6 +171,8 @@ class Interpreter(InterpreterBase):
                 return return_val
             if return_val.type() == Type.NIL:
                 return Value(return_type, self.__default_val(return_type))
+            if return_val.type() == Type.INT and return_type == Type.BOOL:
+                return_val = self.__coerce(return_val.value())
             if return_val.type() != return_type:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -356,16 +358,19 @@ class Interpreter(InterpreterBase):
                 right_value_obj = self.__coerce(right_value_obj.value())
             if left_value_obj.type() == Type.INT and right_value_obj.type() == Type.BOOL:
                 left_value_obj = self.__coerce(left_value_obj.value())
-        if arith_ast.elem_type == "||":
+        if arith_ast.elem_type in ["||", "&&"]:
             if left_value_obj.type() == Type.INT:
                 left_value_obj = self.__coerce(left_value_obj.value())
             if right_value_obj.type() == Type.INT:
                 right_value_obj = self.__coerce(right_value_obj.value())
+        if arith_ast.elem_type == "==" and left_value_obj.value() == None and right_value_obj.value() == None:
+                print("entered")
+                return create_value("true")
         return f(left_value_obj, right_value_obj)
 
     def __compatible_types(self, oper, obj1, obj2):
         # DOCUMENT: allow comparisons ==/!= of anything against anything
-        if oper in ["==", "!=", "||"]:
+        if oper in ["==", "!=", "||", "&&"]:
             if obj1.type() == Type.BOOL and obj2.type() == Type.INT:
                 obj2 = self.__coerce(obj2.value())
             if obj1.type() == Type.INT and obj2.type() == Type.BOOL:
@@ -391,6 +396,8 @@ class Interpreter(InterpreterBase):
 
     def __eval_unary(self, arith_ast, t, f):
         value_obj = self.__eval_expr(arith_ast.get("op1"))
+        if value_obj.type() == Type.INT:
+            value_obj = self.__coerce(value_obj.value())
         if value_obj.type() != t:
             super().error(
                 ErrorType.TYPE_ERROR,
@@ -435,6 +442,9 @@ class Interpreter(InterpreterBase):
         self.op_to_lambda[Type.INT]["||"] = lambda x, y: Value(
             Type.BOOL, x.value() or y.value()
         )
+        self.op_to_lambda[Type.INT]["&&"] = lambda x, y: Value(
+            Type.BOOL, x.value() and y.value()
+        )
         #  set up operations on strings
         self.op_to_lambda[Type.STRING] = {}
         self.op_to_lambda["struct"] = {}
@@ -448,7 +458,7 @@ class Interpreter(InterpreterBase):
             Type.BOOL, x.value() != y.value()
         )
         self.op_to_lambda["struct"]["=="] = lambda x, y: Value(
-            Type.BOOL, x == y
+            Type.BOOL, x is y 
         )
         self.op_to_lambda["struct"]["!="] = lambda x, y: Value(
             Type.BOOL, x != y
