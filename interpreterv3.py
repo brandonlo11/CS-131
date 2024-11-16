@@ -147,12 +147,14 @@ class Interpreter(InterpreterBase):
                 v = temp.type()
             else:
                 v = actual_ast.elem_type
-            if v != arg_type and not (v in self.BIN_OPS and arg_type == Type.INT):
+            if v != arg_type and not (v in self.BIN_OPS and (arg_type == Type.INT or arg_type == Type.BOOL)):
                 super().error(
                     ErrorType.TYPE_ERROR,
                     f"You can not pass an argument of type {v} to {arg_type}",
                 )
             result = copy.copy(self.__eval_expr(actual_ast))
+            if arg_type == Type.BOOL and result.type() == Type.INT:
+                result = self.__coerce(result.value())
             arg_name = formal_ast.get("name")
             args[arg_name] = result
 
@@ -330,6 +332,9 @@ class Interpreter(InterpreterBase):
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+        t = left_value_obj.type()
+        if t in self.struct_defs:
+            t = "struct"
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
         ):
@@ -337,22 +342,30 @@ class Interpreter(InterpreterBase):
                 ErrorType.TYPE_ERROR,
                 f"Incompatible types for {arith_ast.elem_type} operation",
             )
-        if arith_ast.elem_type not in self.op_to_lambda[left_value_obj.type()]:
+        if arith_ast.elem_type not in self.op_to_lambda[t]:
             super().error(
                 ErrorType.TYPE_ERROR,
-                f"Incompatible operator {arith_ast.elem_type} for type {left_value_obj.type()}",
+                f"Incompatible operator {arith_ast.elem_type} for type {t}",
             )
-        f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
+        if left_value_obj.type() in self.struct_defs:
+            f = self.op_to_lambda["struct"][arith_ast.elem_type]
+        else:
+            f = self.op_to_lambda[left_value_obj.type()][arith_ast.elem_type]
         if arith_ast.elem_type in ["==", "!="]:
             if left_value_obj.type() == Type.BOOL and right_value_obj.type() == Type.INT:
                 right_value_obj = self.__coerce(right_value_obj.value())
             if left_value_obj.type() == Type.INT and right_value_obj.type() == Type.BOOL:
                 left_value_obj = self.__coerce(left_value_obj.value())
+        if arith_ast.elem_type == "||":
+            if left_value_obj.type() == Type.INT:
+                left_value_obj = self.__coerce(left_value_obj.value())
+            if right_value_obj.type() == Type.INT:
+                right_value_obj = self.__coerce(right_value_obj.value())
         return f(left_value_obj, right_value_obj)
 
     def __compatible_types(self, oper, obj1, obj2):
         # DOCUMENT: allow comparisons ==/!= of anything against anything
-        if oper in ["==", "!="]:
+        if oper in ["==", "!=", "||"]:
             if obj1.type() == Type.BOOL and obj2.type() == Type.INT:
                 obj2 = self.__coerce(obj2.value())
             if obj1.type() == Type.INT and obj2.type() == Type.BOOL:
@@ -419,8 +432,12 @@ class Interpreter(InterpreterBase):
         self.op_to_lambda[Type.INT][">="] = lambda x, y: Value(
             Type.BOOL, x.value() >= y.value()
         )
+        self.op_to_lambda[Type.INT]["||"] = lambda x, y: Value(
+            Type.BOOL, x.value() or y.value()
+        )
         #  set up operations on strings
         self.op_to_lambda[Type.STRING] = {}
+        self.op_to_lambda["struct"] = {}
         self.op_to_lambda[Type.STRING]["+"] = lambda x, y: Value(
             x.type(), x.value() + y.value()
         )
@@ -429,6 +446,12 @@ class Interpreter(InterpreterBase):
         )
         self.op_to_lambda[Type.STRING]["!="] = lambda x, y: Value(
             Type.BOOL, x.value() != y.value()
+        )
+        self.op_to_lambda["struct"]["=="] = lambda x, y: Value(
+            Type.BOOL, x == y
+        )
+        self.op_to_lambda["struct"]["!="] = lambda x, y: Value(
+            Type.BOOL, x != y
         )
         #  set up operations on bools
         self.op_to_lambda[Type.BOOL] = {}
