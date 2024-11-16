@@ -47,4 +47,4 @@ def get_printable(val):
         if val.value() is True:
             return "true"
         return "false"
-    return None
+    return "nil"

@@ -33,6 +33,7 @@ class Interpreter(InterpreterBase):
     def run(self, program):
         ast = parse_program(program)
         self.__set_up_function_table(ast)
+        self.__set_up_struct_table(ast)
         self.env = EnvironmentManager()
         self.__call_func_aux("main", [])
 
@@ -44,7 +45,25 @@ class Interpreter(InterpreterBase):
             if func_name not in self.func_name_to_ast:
                 self.func_name_to_ast[func_name] = {}
             self.func_name_to_ast[func_name][num_params] = func_def
-
+    
+    def __set_up_struct_table(self, ast):
+        self.struct_defs = {}
+        for struct_def in ast.get("structs"):
+            struct_name = struct_def.get("name")
+            if struct_name in self.struct_defs:
+                super().error(ErrorType.NAME_ERROR, f"Duplicate struct definition: {struct_name}")
+            field_defs = struct_def.get("fields")
+            fields = {}
+            for field_def in field_defs:
+                fieldmap = {}
+                field_name = field_def.get("name")
+                field_type = field_def.get("var_type")
+                if field_name in fields:
+                    super().error(ErrorType.NAME_ERROR, f"Duplicate field name {field_name} in struct {struct_name}")
+                fieldmap["value"] = self.__default_val(field_type)
+                fieldmap["type"] = field_type
+                fields[field_name] = fieldmap
+            self.struct_defs[struct_name] = fields
 
     #Can use this func to get func_def node, can also append return type and arg types to hash map
     def __get_func_by_name(self, name, num_params):
@@ -135,6 +154,8 @@ class Interpreter(InterpreterBase):
         status, return_val = self.__run_statements(func_ast.get("statements"))
         self.env.pop_func()
         if status == ExecStatus.RETURN:
+            if return_type in self.struct_defs and return_val.type() == Type.NIL:
+                return return_val
             if return_val.type() != return_type:
                 super().error(
                     ErrorType.TYPE_ERROR,
@@ -200,9 +221,10 @@ class Interpreter(InterpreterBase):
             return 0
         if var_type == Type.STRING:
             return ""
+        if var_type in self.struct_defs:
+            return None
         #Add default value for structs here
         ErrorType.TYPE_ERROR, f"Unknown type {var_type}"
-
 
     def __eval_expr(self, expr_ast):
         if expr_ast.elem_type == InterpreterBase.NIL_NODE:
@@ -215,6 +237,8 @@ class Interpreter(InterpreterBase):
             return Value(Type.BOOL, expr_ast.get("val"))
         if expr_ast.elem_type == InterpreterBase.VAR_NODE:
             var_name = expr_ast.get("name")
+            if "." in var_name:
+                return self.__get_field_value(var_name)
             val = self.env.get(var_name)
             if val is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
@@ -227,6 +251,33 @@ class Interpreter(InterpreterBase):
             return self.__eval_unary(expr_ast, Type.INT, lambda x: -1 * x)
         if expr_ast.elem_type == Interpreter.NOT_NODE:
             return self.__eval_unary(expr_ast, Type.BOOL, lambda x: not x)
+        if expr_ast.elem_type == Interpreter.NEW_NODE:
+            struct_name = expr_ast.get("var_type")
+            if struct_name not in self.struct_defs:
+                super().error(ErrorType.TYPE_ERROR, f"Struct {struct_name} not found")
+            return Value(struct_name, self.__default_val(struct_name))
+    
+    def __get_field_value(self, dot_line):
+        parts = dot_line.split(".")
+        var_name = parts[0]
+        field_name = parts[1]
+        var = self.env.get(var_name)
+        if var.type() == Type.NIL:
+            super().error(
+                ErrorType.FAULT_ERROR,
+                f"Variable to the left of the dot operator is nil",
+            )
+        if var.type() not in self.struct_defs:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Variable to the left of the dot operator is of {parts[0].type()}, not type struct",
+            )
+        if field_name not in self.struct_defs[var.type()]:
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"{parts[1]}, is not a field",
+            )
+        return Value(self.struct_defs[var.type()][field_name]["type"], self.struct_defs[var.type()][field_name]["value"])
 
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
