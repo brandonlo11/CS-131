@@ -55,14 +55,11 @@ class Interpreter(InterpreterBase):
             field_defs = struct_def.get("fields")
             fields = {}
             for field_def in field_defs:
-                fieldmap = {}
                 field_name = field_def.get("name")
                 field_type = field_def.get("var_type")
                 if field_name in fields:
                     super().error(ErrorType.NAME_ERROR, f"Duplicate field name {field_name} in struct {struct_name}")
-                fieldmap["value"] = self.__default_val(field_type)
-                fieldmap["type"] = field_type
-                fields[field_name] = fieldmap
+                fields[field_name] = Value(field_type, self.__default_val(field_type))
             self.struct_defs[struct_name] = fields
 
     #Can use this func to get func_def node, can also append return type and arg types to hash map
@@ -136,10 +133,17 @@ class Interpreter(InterpreterBase):
         args = {}
         #add param types to check in this for loop
         for formal_ast, actual_ast, arg_type in zip(formal_args, actual_args, arg_types):
-            if actual_ast.get("var_type") != arg_type:
+            if actual_ast.elem_type == InterpreterBase.NEW_NODE:
+                v = actual_ast.get("var_type")
+            elif actual_ast.elem_type == InterpreterBase.VAR_NODE:
+                temp = self.env.get(actual_ast.get("name"))
+                v = temp.type()
+            else:
+                v = actual_ast.elem_type
+            if v != arg_type:
                 super().error(
                     ErrorType.TYPE_ERROR,
-                    f"You can not pass an argument of type {actual_ast.get("var_type")} to {arg_type}",
+                    f"You can not pass an argument of type {v} to {arg_type}",
                 )
             result = copy.copy(self.__eval_expr(actual_ast))
             arg_name = formal_ast.get("name")
@@ -191,12 +195,15 @@ class Interpreter(InterpreterBase):
         var_name = assign_ast.get("name")
         var_val = self.env.get(var_name)
         value_obj = self.__eval_expr(assign_ast.get("expression"))
+        if "." in var_name:
+            self.__assign_field_value(var_name, value_obj)
+            return
         if var_val.type() == Type.BOOL and value_obj.type() == Type.INT:
             if value_obj.value() == 0:
                 value_obj = create_value("false")
             else:
                 value_obj = create_value("true")
-        if var_val.type() != value_obj.type():
+        if var_val.type() != value_obj.type() and not (var_val.type() in self.struct_defs and value_obj.type() == Type.NIL):
             super().error(
                 ErrorType.TYPE_ERROR, f"Types {var_val} and {value_obj} are imcompatible for assignment"
             )
@@ -277,7 +284,29 @@ class Interpreter(InterpreterBase):
                 ErrorType.NAME_ERROR,
                 f"{parts[1]}, is not a field",
             )
-        return Value(self.struct_defs[var.type()][field_name]["type"], self.struct_defs[var.type()][field_name]["value"])
+        return self.struct_defs[var.type()][field_name]
+    
+    def __assign_field_value(self, dot_line, value):
+        parts = dot_line.split(".")
+        var_name = parts[0]
+        field_name = parts[1]
+        var = self.env.get(var_name)
+        if var.type() == Type.NIL:
+            super().error(
+                ErrorType.FAULT_ERROR,
+                f"Variable to the left of the dot operator is nil",
+            )
+        if var.type() not in self.struct_defs:
+            super().error(
+                ErrorType.TYPE_ERROR,
+                f"Variable to the left of the dot operator is of {parts[0].type()}, not type struct",
+            )
+        if field_name not in self.struct_defs[var.type()]:
+            super().error(
+                ErrorType.NAME_ERROR,
+                f"{parts[1]}, is not a field",
+            )
+        self.struct_defs[var.type()][field_name] = value
 
     def __eval_op(self, arith_ast):
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
