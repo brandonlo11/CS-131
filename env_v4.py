@@ -1,5 +1,11 @@
 # The EnvironmentManager class keeps a mapping between each variable name (aka symbol)
 # in a brewin program and the Value object, which stores a type, and a value.
+class VariableEntry:
+    def __init__(self, value=None, expr_ast=None, is_evaluated=False):
+        self.value = value        # The evaluated value (Value object)
+        self.expr_ast = expr_ast  # The unevaluated expression (AST node)
+        self.is_evaluated = is_evaluated  # Boolean flag indicating if evaluated
+
 class EnvironmentManager:
     def __init__(self):
         self.environment = []
@@ -9,26 +15,25 @@ class EnvironmentManager:
         cur_func_env = self.environment[-1]
         for env in reversed(cur_func_env):
             if symbol in env:
-                return env[symbol]
-
+                var_entry = env[symbol]
+                return var_entry  # Return the VariableEntry object
         return None
 
-    def set(self, symbol, value):
+    def set(self, symbol, var_entry):
         cur_func_env = self.environment[-1]
         for env in reversed(cur_func_env):
             if symbol in env:
-                env[symbol] = value
+                env[symbol] = var_entry  # Store the VariableEntry object
                 return True
-
         return False
 
     # create a new symbol in the top-most environment, regardless of whether that symbol exists
     # in a lower environment
-    def create(self, symbol, value):
+    def create(self, symbol, var_entry):
         cur_func_env = self.environment[-1]
         if symbol in cur_func_env[-1]:   # symbol already defined in current scope
             return False
-        cur_func_env[-1][symbol] = value
+        cur_func_env[-1][symbol] = var_entry
         return True
 
     # used when we enter a new function - start with empty dictionary to hold parameters.

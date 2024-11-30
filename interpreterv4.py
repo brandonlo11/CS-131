@@ -13,6 +13,11 @@ class ExecStatus(Enum):
     CONTINUE = 1
     RETURN = 2
 
+class VariableEntry:
+    def __init__(self, value=None, expr_ast=None, is_evaluated=False):
+        self.value = value        # The evaluated value (Value object)
+        self.expr_ast = expr_ast  # The unevaluated expression (AST node)
+        self.is_evaluated = is_evaluated  # Boolean flag indicating if evaluated
 
 # Main interpreter class
 class Interpreter(InterpreterBase):
@@ -109,9 +114,9 @@ class Interpreter(InterpreterBase):
         # first evaluate all of the actual parameters and associate them with the formal parameter names
         args = {}
         for formal_ast, actual_ast in zip(formal_args, actual_args):
-            result = copy.copy(self.__eval_expr(actual_ast))
             arg_name = formal_ast.get("name")
-            args[arg_name] = result
+            var_entry = VariableEntry(expr_ast=actual_ast, is_evaluated=False)
+            args[arg_name] = var_entry
 
         # then create the new activation record 
         self.env.push_func()
@@ -146,15 +151,22 @@ class Interpreter(InterpreterBase):
 
     def __assign(self, assign_ast):
         var_name = assign_ast.get("name")
-        value_obj = self.__eval_expr(assign_ast.get("expression"))
-        if not self.env.set(var_name, value_obj):
+        expr_ast = assign_ast.get("expression")
+        var_entry = VariableEntry(expr_ast=expr_ast, is_evaluated=False)
+        if not self.env.set(var_name, var_entry):
             super().error(
                 ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
             )
+        # value_obj = self.__eval_expr(assign_ast.get("expression"))
+        # if not self.env.set(var_name, value_obj):
+        #     super().error(
+        #         ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
+        #     )
     
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
-        if not self.env.create(var_name, Interpreter.NIL_VALUE):
+        var_entry = VariableEntry(value=Interpreter.NIL_VALUE, is_evaluated=True)
+        if not self.env.create(var_name, var_entry):
             super().error(
                 ErrorType.NAME_ERROR, f"Duplicate definition for variable {var_name}"
             )
@@ -170,10 +182,19 @@ class Interpreter(InterpreterBase):
             return Value(Type.BOOL, expr_ast.get("val"))
         if expr_ast.elem_type == InterpreterBase.VAR_NODE:
             var_name = expr_ast.get("name")
-            val = self.env.get(var_name)
-            if val is None:
+            var_entry = self.env.get(var_name)
+            if var_entry is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
-            return val
+            if not var_entry.is_evaluated:
+                # Evaluate the expression
+                value = self.__eval_expr(var_entry.expr_ast)
+                # Cache the result
+                var_entry.value = value
+                var_entry.is_evaluated = True
+                var_entry.expr_ast = None
+                # Update the variable in the environment
+                self.env.set(var_name, var_entry)
+            return var_entry.value
         if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
             return self.__call_func(expr_ast)
         if expr_ast.elem_type in Interpreter.BIN_OPS:
