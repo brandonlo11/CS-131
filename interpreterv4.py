@@ -184,6 +184,33 @@ class Interpreter(InterpreterBase):
             return self.__eval_unary(expr_ast, Type.BOOL, lambda x: not x)
 
     def __eval_op(self, arith_ast):
+        # Implement short-circuiting for the && operator
+        if arith_ast.elem_type == "&&":
+            left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+            if left_value_obj.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR, "Left operand of && must be BOOL")
+            if not left_value_obj.value():
+                # Short-circuit: Return false immediately if op1 is false
+                return Value(Type.BOOL, False)
+            # Evaluate the right operand only if the left is True
+            right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+            if right_value_obj.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR, "Right operand of && must be BOOL")
+            return Value(Type.BOOL, right_value_obj.value())
+        # Implement short-circuiting for the || operator
+        elif arith_ast.elem_type == "||":
+            left_value_obj = self.__eval_expr(arith_ast.get("op1"))
+            if left_value_obj.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR, "Left operand of || must be BOOL")
+            if left_value_obj.value():
+                # Short-circuit: Return true immediately if op1 is true
+                return Value(Type.BOOL, True)
+            # Evaluate the right operand only if the left is False
+            right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+            if right_value_obj.type() != Type.BOOL:
+                super().error(ErrorType.TYPE_ERROR, "Right operand of || must be BOOL")
+            return Value(Type.BOOL, right_value_obj.value())
+
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
         if not self.__compatible_types(
