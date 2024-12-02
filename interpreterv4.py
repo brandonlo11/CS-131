@@ -64,19 +64,6 @@ class Interpreter(InterpreterBase):
             )
         return candidate_funcs[num_params]
 
-    # def __run_statements(self, statements):
-    #     self.env.push_block()
-    #     for statement in statements:
-    #         if self.trace_output:
-    #             print(statement)
-    #         status, return_val = self.__run_statement(statement)
-    #         if status == ExecStatus.RETURN:
-    #             self.env.pop_block()
-    #             return (status, return_val)
-
-    #     self.env.pop_block()
-    #     return (ExecStatus.CONTINUE, Interpreter.NIL_VALUE)
-
     def __run_statements(self, statements):
         self.env.push_block()
         try:
