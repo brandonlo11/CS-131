@@ -4,7 +4,7 @@ import copy
 from enum import Enum
 
 from brewparse import parse_program
-from env_v4 import EnvironmentManager
+from env_v4 import EnvironmentManager, VariableEntry
 from intbase import InterpreterBase, ErrorType
 from type_valuev4 import Type, Value, create_value, get_printable
 
@@ -12,13 +12,7 @@ from type_valuev4 import Type, Value, create_value, get_printable
 class ExecStatus(Enum):
     CONTINUE = 1
     RETURN = 2
-
-class VariableEntry:
-    def __init__(self, value=None, expr_ast=None, is_evaluated=False):
-        self.value = value        # The evaluated value (Value object)
-        self.expr_ast = expr_ast  # The unevaluated expression (AST node)
-        self.is_evaluated = is_evaluated  # Boolean flag indicating if evaluated
-
+    
 # Main interpreter class
 class Interpreter(InterpreterBase):
     # constants
@@ -150,18 +144,28 @@ class Interpreter(InterpreterBase):
             return Value(Type.STRING, inp)
 
     def __assign(self, assign_ast):
-        var_name = assign_ast.get("name")
-        expr_ast = assign_ast.get("expression")
-        var_entry = VariableEntry(expr_ast=expr_ast, is_evaluated=False)
-        if not self.env.set(var_name, var_entry):
-            super().error(
-                ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
-            )
+        # var_name = assign_ast.get("name")
+        # expr_ast = assign_ast.get("expression")
+        # var_entry = VariableEntry(expr_ast=expr_ast, is_evaluated=False)
+        # if not self.env.set(var_name, var_entry):
+        #     super().error(
+        #         ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
+        #     )
+
         # value_obj = self.__eval_expr(assign_ast.get("expression"))
         # if not self.env.set(var_name, value_obj):
         #     super().error(
         #         ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
         #     )
+        var_name = assign_ast.get("name")
+        expr_ast = assign_ast.get("expression")
+        # Capture the current environment
+        captured_env = self.env.copy_current_env()
+        var_entry = VariableEntry(expr_ast=expr_ast, is_evaluated=False, captured_env=captured_env)
+        if not self.env.set(var_name, var_entry):
+            super().error(
+                ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
+            )
     
     def __var_def(self, var_ast):
         var_name = var_ast.get("name")
@@ -185,16 +189,18 @@ class Interpreter(InterpreterBase):
             var_entry = self.env.get(var_name)
             if var_entry is None:
                 super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
-            if not var_entry.is_evaluated:
-                # Evaluate the expression
-                value = self.__eval_expr(var_entry.expr_ast)
+
+            if var_entry.is_evaluated:
+                return var_entry.value
+            else:
+                # Evaluate the expression using the captured environment
+                value = self.__eval_expr_with_captured_env(var_entry.expr_ast, var_entry.captured_env)
                 # Cache the result
                 var_entry.value = value
                 var_entry.is_evaluated = True
                 var_entry.expr_ast = None
-                # Update the variable in the environment
-                self.env.set(var_name, var_entry)
-            return var_entry.value
+                var_entry.captured_env = None  # Release the captured environment
+                return value
         if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
             return self.__call_func(expr_ast)
         if expr_ast.elem_type in Interpreter.BIN_OPS:
@@ -203,6 +209,18 @@ class Interpreter(InterpreterBase):
             return self.__eval_unary(expr_ast, Type.INT, lambda x: -1 * x)
         if expr_ast.elem_type == Interpreter.NOT_NODE:
             return self.__eval_unary(expr_ast, Type.BOOL, lambda x: not x)
+        
+    def __eval_expr_with_captured_env(self, expr_ast, captured_env):
+        # Temporarily replace the current environment with the captured one
+        original_env = self.env
+        self.env = EnvironmentManager.from_captured_env(captured_env)
+        try:
+            value = self.__eval_expr(expr_ast)
+        finally:
+            # Restore the original environment
+            self.env = original_env
+        return value
+
 
     def __eval_op(self, arith_ast):
         # Implement short-circuiting for the && operator
