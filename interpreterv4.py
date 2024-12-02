@@ -12,6 +12,10 @@ from type_valuev4 import Type, Value, create_value, get_printable
 class ExecStatus(Enum):
     CONTINUE = 1
     RETURN = 2
+
+class InterpreterException(Exception):
+    def __init__(self, exception_type):
+        self.exception_type = exception_type
     
 # Main interpreter class
 class Interpreter(InterpreterBase):
@@ -33,7 +37,12 @@ class Interpreter(InterpreterBase):
         ast = parse_program(program)
         self.__set_up_function_table(ast)
         self.env = EnvironmentManager()
-        self.__call_func_aux("main", [])
+        self.env.push_func()
+        try:
+            self.__call_func_aux("main", [])
+        except InterpreterException as e:
+            super().error(ErrorType.FAULT_ERROR, f"Uncaught exception: {e.exception_type}")
+        self.env.pop_func()
 
     def __set_up_function_table(self, ast):
         self.func_name_to_ast = {}
@@ -55,35 +64,59 @@ class Interpreter(InterpreterBase):
             )
         return candidate_funcs[num_params]
 
+    # def __run_statements(self, statements):
+    #     self.env.push_block()
+    #     for statement in statements:
+    #         if self.trace_output:
+    #             print(statement)
+    #         status, return_val = self.__run_statement(statement)
+    #         if status == ExecStatus.RETURN:
+    #             self.env.pop_block()
+    #             return (status, return_val)
+
+    #     self.env.pop_block()
+    #     return (ExecStatus.CONTINUE, Interpreter.NIL_VALUE)
+
     def __run_statements(self, statements):
         self.env.push_block()
-        for statement in statements:
-            if self.trace_output:
-                print(statement)
-            status, return_val = self.__run_statement(statement)
-            if status == ExecStatus.RETURN:
-                self.env.pop_block()
-                return (status, return_val)
-
+        try:
+            for statement in statements:
+                if self.trace_output:
+                    print(statement)
+                status, return_val = self.__run_statement(statement)
+                if status == ExecStatus.RETURN:
+                    self.env.pop_block()
+                    return (status, return_val)
+        except InterpreterException as e:
+            self.env.pop_block()
+            raise e
         self.env.pop_block()
         return (ExecStatus.CONTINUE, Interpreter.NIL_VALUE)
+
 
     def __run_statement(self, statement):
         status = ExecStatus.CONTINUE
         return_val = None
-        if statement.elem_type == InterpreterBase.FCALL_NODE:
-            self.__call_func(statement)
-        elif statement.elem_type == "=":
-            self.__assign(statement)
-        elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
-            self.__var_def(statement)
-        elif statement.elem_type == InterpreterBase.RETURN_NODE:
-            status, return_val = self.__do_return(statement)
-        elif statement.elem_type == Interpreter.IF_NODE:
-            status, return_val = self.__do_if(statement)
-        elif statement.elem_type == Interpreter.FOR_NODE:
-            status, return_val = self.__do_for(statement)
-
+        try:
+            if statement.elem_type == InterpreterBase.FCALL_NODE:
+                self.__call_func(statement)
+            elif statement.elem_type == "=":
+                self.__assign(statement)
+            elif statement.elem_type == InterpreterBase.VAR_DEF_NODE:
+                self.__var_def(statement)
+            elif statement.elem_type == InterpreterBase.RETURN_NODE:
+                status, return_val = self.__do_return(statement)
+            elif statement.elem_type == Interpreter.IF_NODE:
+                status, return_val = self.__do_if(statement)
+            elif statement.elem_type == Interpreter.FOR_NODE:
+                status, return_val = self.__do_for(statement)
+            elif statement.elem_type == InterpreterBase.RAISE_NODE:
+                self.__do_raise(statement)
+            elif statement.elem_type == InterpreterBase.TRY_NODE:
+                status, return_val = self.__do_try(statement)
+        except InterpreterException as e:
+            # Propagate the exception upwards
+            raise e
         return (status, return_val)
     
     def __call_func(self, call_node):
@@ -114,10 +147,14 @@ class Interpreter(InterpreterBase):
 
         # then create the new activation record 
         self.env.push_func()
-        # and add the formal arguments to the activation record
-        for arg_name, value in args.items():
-          self.env.create(arg_name, value)
-        _, return_val = self.__run_statements(func_ast.get("statements"))
+        try:
+            # Add formal arguments to the environment
+            for arg_name, value in args.items():
+                self.env.create(arg_name, value)
+            status, return_val = self.__run_statements(func_ast.get("statements"))
+        except InterpreterException as e:
+            self.env.pop_func()
+            raise e
         self.env.pop_func()
         return return_val
 
@@ -163,39 +200,44 @@ class Interpreter(InterpreterBase):
             )
 
     def __eval_expr(self, expr_ast):
-        if expr_ast.elem_type == InterpreterBase.NIL_NODE:
-            return Interpreter.NIL_VALUE
-        if expr_ast.elem_type == InterpreterBase.INT_NODE:
-            return Value(Type.INT, expr_ast.get("val"))
-        if expr_ast.elem_type == InterpreterBase.STRING_NODE:
-            return Value(Type.STRING, expr_ast.get("val"))
-        if expr_ast.elem_type == InterpreterBase.BOOL_NODE:
-            return Value(Type.BOOL, expr_ast.get("val"))
-        if expr_ast.elem_type == InterpreterBase.VAR_NODE:
-            var_name = expr_ast.get("name")
-            var_entry = self.env.get(var_name)
-            if var_entry is None:
-                super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
+        try:
+            if expr_ast.elem_type == InterpreterBase.NIL_NODE:
+                return Interpreter.NIL_VALUE
+            if expr_ast.elem_type == InterpreterBase.INT_NODE:
+                return Value(Type.INT, expr_ast.get("val"))
+            if expr_ast.elem_type == InterpreterBase.STRING_NODE:
+                return Value(Type.STRING, expr_ast.get("val"))
+            if expr_ast.elem_type == InterpreterBase.BOOL_NODE:
+                return Value(Type.BOOL, expr_ast.get("val"))
+            if expr_ast.elem_type == InterpreterBase.VAR_NODE:
+                var_name = expr_ast.get("name")
+                var_entry = self.env.get(var_name)
+                if var_entry is None:
+                    super().error(ErrorType.NAME_ERROR, f"Variable {var_name} not found")
 
-            if var_entry.is_evaluated:
-                return var_entry.value
-            else:
-                # Evaluate the expression using the captured environment
-                value = self.__eval_expr_with_captured_env(var_entry.expr_ast, var_entry.captured_env)
-                # Cache the result
-                var_entry.value = value
-                var_entry.is_evaluated = True
-                var_entry.expr_ast = None
-                var_entry.captured_env = None  # Release the captured environment
-                return value
-        if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
-            return self.__call_func(expr_ast)
-        if expr_ast.elem_type in Interpreter.BIN_OPS:
-            return self.__eval_op(expr_ast)
-        if expr_ast.elem_type == Interpreter.NEG_NODE:
-            return self.__eval_unary(expr_ast, Type.INT, lambda x: -1 * x)
-        if expr_ast.elem_type == Interpreter.NOT_NODE:
-            return self.__eval_unary(expr_ast, Type.BOOL, lambda x: not x)
+                if var_entry.is_evaluated:
+                    return var_entry.value
+                else:
+                    # Evaluate the expression using the captured environment
+                    value = self.__eval_expr_with_captured_env(var_entry.expr_ast, var_entry.captured_env)
+                    # Cache the result
+                    var_entry.value = value
+                    var_entry.is_evaluated = True
+                    var_entry.expr_ast = None
+                    var_entry.captured_env = None  # Release the captured environment
+                    return value
+            if expr_ast.elem_type == InterpreterBase.FCALL_NODE:
+                return self.__call_func(expr_ast)
+            if expr_ast.elem_type in Interpreter.BIN_OPS:
+                return self.__eval_op(expr_ast)
+            if expr_ast.elem_type == Interpreter.NEG_NODE:
+                return self.__eval_unary(expr_ast, Type.INT, lambda x: -1 * x)
+            if expr_ast.elem_type == Interpreter.NOT_NODE:
+                return self.__eval_unary(expr_ast, Type.BOOL, lambda x: not x)
+        except InterpreterException as e:
+            # Propagate the exception
+            raise e
+        
         
     def __eval_expr_with_captured_env(self, expr_ast, captured_env):
         # Temporarily replace the current environment with the captured one
@@ -239,6 +281,9 @@ class Interpreter(InterpreterBase):
 
         left_value_obj = self.__eval_expr(arith_ast.get("op1"))
         right_value_obj = self.__eval_expr(arith_ast.get("op2"))
+        if arith_ast.elem_type == "/":
+            if right_value_obj.type() == Type.INT and right_value_obj.value() == 0:
+                raise InterpreterException("div0")
         if not self.__compatible_types(
             arith_ast.elem_type, left_value_obj, right_value_obj
         ):
@@ -282,9 +327,7 @@ class Interpreter(InterpreterBase):
         self.op_to_lambda[Type.INT]["*"] = lambda x, y: Value(
             x.type(), x.value() * y.value()
         )
-        self.op_to_lambda[Type.INT]["/"] = lambda x, y: Value(
-            x.type(), x.value() // y.value()
-        )
+        self.op_to_lambda[Type.INT]["/"] = lambda x, y: self.__div_op(x, y)
         self.op_to_lambda[Type.INT]["=="] = lambda x, y: Value(
             Type.BOOL, x.type() == y.type() and x.value() == y.value()
         )
@@ -387,3 +430,43 @@ class Interpreter(InterpreterBase):
             return (ExecStatus.RETURN, Interpreter.NIL_VALUE)
         value_obj = copy.copy(self.__eval_expr(expr_ast))
         return (ExecStatus.RETURN, value_obj)
+
+    def __do_raise(self, raise_ast):
+        # Evaluate the exception expression eagerly
+        exception_expr = raise_ast.get("exception_type")
+        exception_value = self.__eval_expr(exception_expr)
+        if exception_value.type() != Type.STRING:
+            super().error(
+                ErrorType.TYPE_ERROR, "Exception type must be a string"
+            )
+        # Raise an exception to be caught by try/catch blocks
+        raise InterpreterException(exception_value.value())
+    
+    def __do_try(self, try_ast):
+        try:
+            # Execute the statements inside the try block
+            status, return_val = self.__run_statements(try_ast.get("statements"))
+            return (status, return_val)
+        except InterpreterException as e:
+            # Handle the exception
+            catchers = try_ast.get("catchers")
+            exception_handled = False
+            for catcher in catchers:
+                exception_type = catcher.get("exception_type")
+                if exception_type == e.exception_type:
+                    # Exception type matches, execute the catch block
+                    self.env.push_block()  # Enter catch block scope
+                    status, return_val = self.__run_statements(catcher.get("statements"))
+                    self.env.pop_block()  # Exit catch block scope
+                    exception_handled = True
+                    return (status, return_val)
+            # If no matching catch block, propagate the exception
+            raise e
+    
+    def __div_op(self, x, y):
+        if y.value() == 0:
+            raise InterpreterException("div0")
+        return Value(x.type(), x.value() // y.value())
+
+
+
