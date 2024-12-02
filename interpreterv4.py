@@ -144,19 +144,6 @@ class Interpreter(InterpreterBase):
             return Value(Type.STRING, inp)
 
     def __assign(self, assign_ast):
-        # var_name = assign_ast.get("name")
-        # expr_ast = assign_ast.get("expression")
-        # var_entry = VariableEntry(expr_ast=expr_ast, is_evaluated=False)
-        # if not self.env.set(var_name, var_entry):
-        #     super().error(
-        #         ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
-        #     )
-
-        # value_obj = self.__eval_expr(assign_ast.get("expression"))
-        # if not self.env.set(var_name, value_obj):
-        #     super().error(
-        #         ErrorType.NAME_ERROR, f"Undefined variable {var_name} in assignment"
-        #     )
         var_name = assign_ast.get("name")
         expr_ast = assign_ast.get("expression")
         # Capture the current environment
